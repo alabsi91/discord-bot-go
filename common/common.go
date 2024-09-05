@@ -118,3 +118,119 @@ type Config struct {
 		} `json:"routes"`
 	} `json:"http"`
 }
+
+type X1337xCategory int
+
+func (x X1337xCategory) String() string {
+	categories := []string{
+		"All",
+		"Movies",
+		"TV",
+		"Games",
+		"Music",
+		"Apps",
+		"Documentaries",
+		"Anime",
+		"Other",
+		"XXX",
+	}
+
+	if int(x) < 0 || int(x) >= len(categories) {
+		return ""
+	}
+
+	return categories[x]
+}
+
+func (x X1337xCategory) Parse() string {
+	categories := []string{
+		"",
+		"Movies",
+		"TV",
+		"Games",
+		"Music",
+		"Apps",
+		"Documentaries",
+		"Anime",
+		"Other",
+		"XXX",
+	}
+
+	if int(x) < 0 || int(x) >= len(categories) {
+		return ""
+	}
+
+	return categories[x]
+}
+
+const (
+	CategoryAll X1337xCategory = iota
+	CategoryMovie
+	CategoryTV
+	CategoryGames
+	CategoryMusic
+	CategoryApplications
+	CategoryDocumentaries
+	CategoryAnime
+	CategoryOther
+	CategoryXXX
+)
+
+type X1337xSort int
+
+func (x X1337xSort) String() string {
+	sorts := []string{
+		"None",
+		"time Desc",
+		"time Asc",
+		"Size Desc",
+		"Size Asc",
+		"Seeders Desc",
+		"Seeders Asc",
+		"Leechers Desc",
+		"Leechers Asc",
+	}
+
+	if int(x) < 0 || int(x) >= len(sorts) {
+		return ""
+	}
+
+	return sorts[x]
+}
+
+func (x X1337xSort) Parse() string {
+	sorts := []string{
+		"",
+		"time/desc",
+		"time/asc",
+		"size/desc",
+		"size/asc",
+		"seeders/desc",
+		"seeders/asc",
+		"leechers/desc",
+		"leechers/asc",
+	}
+
+	if int(x) < 0 || int(x) >= len(sorts) {
+		return ""
+	}
+
+	return sorts[x]
+}
+
+const (
+	SortNone X1337xSort = iota
+	SortTimeDesc
+	SortTimeAsc
+	SortSizeDesc
+	SortSizeAsc
+	SortSeedersDesc
+	SortSeedersAsc
+	SortLeechersDesc
+	SortLeechersAsc
+)
+
+type SearchResult struct {
+	Name string
+	Url  string
+}

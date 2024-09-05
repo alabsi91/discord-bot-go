@@ -10,12 +10,21 @@ import (
 	"fmt"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/cenkalti/rain/torrent"
+	"github.com/gocolly/colly/v2"
 )
+
+type SearchTmp struct {
+	Options *torrentOptions
+	Results []common.SearchResult
+}
+
+var searchTmp *SearchTmp
 
 var torrentCommand = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
@@ -40,6 +49,59 @@ var torrentCommand = common.SlashCommand{
 				Description: "List all torrents",
 				Type:        discordgo.ApplicationCommandOptionSubCommand,
 			},
+			{
+				Name:        "search",
+				Description: "Search for torrents on `https://1337x.to` and download them",
+				Type:        discordgo.ApplicationCommandOptionSubCommand,
+				Options: []*discordgo.ApplicationCommandOption{
+					{
+						Name:        "query",
+						Description: "The query to search for",
+						Type:        discordgo.ApplicationCommandOptionString,
+						Required:    true,
+					},
+					{
+						Name:        "category",
+						Description: "The category to search in (optional)",
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Required:    false,
+						Choices: []*discordgo.ApplicationCommandOptionChoice{
+							{Name: common.CategoryAll.String(), Value: common.CategoryAll},
+							{Name: common.CategoryMovie.String(), Value: common.CategoryMovie},
+							{Name: common.CategoryTV.String(), Value: common.CategoryTV},
+							{Name: common.CategoryAnime.String(), Value: common.CategoryAnime},
+							{Name: common.CategoryDocumentaries.String(), Value: common.CategoryDocumentaries},
+							{Name: common.CategoryGames.String(), Value: common.CategoryGames},
+							{Name: common.CategoryMusic.String(), Value: common.CategoryMusic},
+							{Name: common.CategoryOther.String(), Value: common.CategoryOther},
+							{Name: common.CategoryXXX.String(), Value: common.CategoryXXX},
+						},
+					},
+					{
+						Name:        "sort",
+						Description: "The sort order (optional)",
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Required:    false,
+						Choices: []*discordgo.ApplicationCommandOptionChoice{
+							{Name: common.SortNone.String(), Value: common.SortNone},
+							{Name: common.SortTimeDesc.String(), Value: common.SortTimeDesc},
+							{Name: common.SortTimeAsc.String(), Value: common.SortTimeAsc},
+							{Name: common.SortSizeDesc.String(), Value: common.SortSizeDesc},
+							{Name: common.SortSizeAsc.String(), Value: common.SortSizeAsc},
+							{Name: common.SortSeedersDesc.String(), Value: common.SortSeedersDesc},
+							{Name: common.SortSeedersAsc.String(), Value: common.SortSeedersAsc},
+							{Name: common.SortLeechersDesc.String(), Value: common.SortLeechersDesc},
+							{Name: common.SortLeechersAsc.String(), Value: common.SortLeechersAsc},
+						},
+					},
+					{
+						Name:        "page",
+						Description: "The page number (optional)",
+						Type:        discordgo.ApplicationCommandOptionInteger,
+						Required:    false,
+					},
+				},
+			},
 		},
 	},
 
@@ -52,8 +114,12 @@ func init() {
 }
 
 type torrentOptions struct {
-	subcommand string // "add" or "list"
-	uri        string // required for "add"
+	subcommand string                // "add" or "list"
+	uri        string                // required for "add"
+	query      string                // required for "search"
+	category   common.X1337xCategory // optional for "search"
+	sort       common.X1337xSort     // optional for "search"
+	page       int                   // optional for "search"
 }
 
 func parseTorrentOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (torrentOptions, error) {
@@ -79,6 +145,30 @@ func parseTorrentOptions(options []*discordgo.ApplicationCommandInteractionDataO
 
 	if subcommand == "list" {
 		results.subcommand = subcommand
+	}
+
+	if subcommand == "search" {
+		results.subcommand = subcommand
+
+		for _, opt := range subcommandOptions {
+			switch opt.Name {
+			case "query":
+				val, err := utils.CheckOptionStringValue(opt)
+				if err != nil {
+					return results, fmt.Errorf("please enter a query")
+				}
+				results.query = val
+			case "category":
+				results.category = common.X1337xCategory(opt.IntValue())
+			case "sort":
+				results.sort = common.X1337xSort(opt.IntValue())
+			case "page":
+				results.page = int(opt.IntValue())
+				if results.page < 1 {
+					results.page = 1
+				}
+			}
+		}
 	}
 
 	return results, nil
@@ -110,6 +200,11 @@ func torrentHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appDat
 	if options.subcommand == "list" {
 		listTorrents(s, i)
 		return
+	}
+
+	// * SEARCH
+	if options.subcommand == "search" {
+		searchTorrent(s, i, &options)
 	}
 }
 
@@ -313,6 +408,113 @@ func onComponentReaction(s *discordgo.Session, i *discordgo.InteractionCreate, d
 			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
 			return
 		}
+
+		return
+	}
+
+	// Next Page button when using torrent search
+	if data.CustomID == "next_page" {
+		sendErr := interaction.RespondWithNothing(s, i)
+		if sendErr != nil {
+			Log.Error("\ntorrentList:", sendErr.Error())
+			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+			return
+		}
+
+		if searchTmp == nil {
+			sendErr = interaction.RespondEdit(s, i, "No previous page")
+			if sendErr != nil {
+				Log.Error("\nTorrent:", sendErr.Error())
+				Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+			}
+			return
+		}
+
+		searchTmp.Options.page += 1
+
+		results := search_1337x(searchTmp.Options.query, searchTmp.Options.category, searchTmp.Options.sort, searchTmp.Options.page)
+
+		if len(results) == 0 {
+			sendErr = interaction.RespondEdit(s, i, "No results found.")
+			if sendErr != nil {
+				Log.Error("\nTorrent:", sendErr.Error())
+				Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+			}
+			return
+		}
+
+		searchTmp.Results = results
+
+		menuOptions := []*components.SelectMenuOption{}
+		for i, result := range results {
+			if i >= 24 {
+				break
+			}
+
+			name := result.Name
+			if name == "" {
+				name = "Error"
+			}
+			if len(name) > 100 {
+				name = name[:97] + "..."
+			}
+
+			menuOptions = append(menuOptions, components.NewMenuOption().SetLabel(name).SetValue(strconv.Itoa(i)))
+		}
+
+		content := fmt.Sprintf("Found %d results\n **Page:** `%d`", len(results), searchTmp.Options.page)
+		if len(results) > 25 {
+			content += "\n (Can only show 25 torrents at once)"
+		}
+
+		sendErr = interaction.RespondEditWithComponents(s, i, &content,
+			components.AddMessageComponents(
+				components.NewRow(
+					components.NewSelectMenu().SetStringType().SetPlaceholder("Select a result to download").
+						SetCustomID("search_list").
+						SetOptions(menuOptions...),
+				),
+				components.NewRow(
+					components.NewButton().SetLabel("Next Page").SetCustomID("next_page"),
+				),
+			),
+		)
+
+		if sendErr != nil {
+			Log.Error("\nTorrent:", `sending a respond for "torrent" command:`, sendErr.Error())
+		}
+
+		return
+	}
+
+	if data.CustomID == "search_list" {
+		searchIndexStr := data.Values[0]
+		searchIndex, err := strconv.Atoi(searchIndexStr)
+
+		if searchTmp == nil || err != nil || searchIndex < 0 || searchIndex >= len(searchTmp.Results) {
+			sendErr := interaction.RespondEdit(s, i, "No search results found.")
+			if sendErr != nil {
+				Log.Error("\nTorrent:", sendErr.Error())
+				Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+			}
+			return
+		}
+
+		searchResult := searchTmp.Results[searchIndex]
+		magnet := getMagnet(searchResult.Url)
+
+		if magnet == "" {
+			sendErr := interaction.RespondEdit(s, i, "No magnet link found.")
+			if sendErr != nil {
+				Log.Error("\nTorrent:", sendErr.Error())
+				Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+			}
+			return
+		}
+
+		addTorrent(s, i, &magnet, nil)
+
+		return
 	}
 }
 
@@ -461,6 +663,73 @@ func listTorrents(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	}
 }
 
+func searchTorrent(s *discordgo.Session, i *discordgo.InteractionCreate, options *torrentOptions) {
+	sendErr := interaction.RespondWithThinking(s, i, false)
+	if sendErr != nil {
+		Log.Error("\nTorrent:", sendErr.Error())
+		Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+		return
+	}
+
+	searchTmp = nil
+
+	if options.page < 1 {
+		options.page = 1
+	}
+
+	results := search_1337x(options.query, options.category, options.sort, options.page)
+
+	if len(results) == 0 {
+		sendErr = interaction.RespondEdit(s, i, "No results found.")
+		if sendErr != nil {
+			Log.Error("\nTorrent:", sendErr.Error())
+			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+		}
+		return
+	}
+
+	searchTmp = &SearchTmp{Options: options, Results: results}
+
+	menuOptions := []*components.SelectMenuOption{}
+	for i, result := range results {
+		if i >= 24 {
+			break
+		}
+
+		name := result.Name
+		if name == "" {
+			name = "Error"
+		}
+		if len(name) > 100 {
+			name = name[:97] + "..."
+		}
+
+		menuOptions = append(menuOptions, components.NewMenuOption().SetLabel(name).SetValue(strconv.Itoa(i)))
+	}
+
+	content := fmt.Sprintf("Found %d results\n **Page:** `%d`", len(results), options.page)
+	if len(results) > 25 {
+		content += "\n (Can only show 25 torrents at once)"
+	}
+
+	sendErr = interaction.RespondEditWithComponents(s, i, &content,
+		components.AddMessageComponents(
+			components.NewRow(
+				components.NewSelectMenu().SetStringType().SetPlaceholder("Select a result to download").
+					SetCustomID("search_list").
+					SetOptions(menuOptions...),
+			),
+			components.NewRow(
+				components.NewButton().SetLabel("Next Page").SetCustomID("next_page"),
+			),
+		),
+	)
+
+	if sendErr != nil {
+		Log.Error("\nTorrent:", `sending a respond for "torrent" command:`, sendErr.Error())
+	}
+}
+
 func getVideoUrls(tor *torrent.Torrent) ([]string, error) {
 	config := utils.GetAppConfig()
 
@@ -483,4 +752,53 @@ func getVideoUrls(tor *torrent.Torrent) ([]string, error) {
 	}
 
 	return results, err
+}
+
+func search_1337x(query string, category common.X1337xCategory, sort common.X1337xSort, page int) (results []common.SearchResult) {
+	if page < 1 {
+		page = 1
+	}
+
+	query = strings.ReplaceAll(query, " ", "+")
+	query = strings.ReplaceAll(query, ".", "+")
+
+	baseUrl := "https://1337x.to"
+	searchCMD := "search"
+	pageStr := strconv.Itoa(page)
+
+	if category != common.CategoryAll {
+		searchCMD = fmt.Sprintf("category-%s", searchCMD)
+	}
+	if sort != common.SortNone {
+		searchCMD = fmt.Sprintf("sort-%s", searchCMD)
+	}
+
+	fullUrl, err := url.JoinPath(baseUrl, searchCMD, query, category.Parse(), sort.Parse(), pageStr, "/")
+
+	if err != nil {
+		panic(err)
+	}
+
+	c := colly.NewCollector()
+
+	c.OnHTML(`a[href^="/torrent"]`, func(e *colly.HTMLElement) {
+		href := baseUrl + e.Attr("href")
+		results = append(results, common.SearchResult{Url: href, Name: e.Text})
+	})
+
+	c.Visit(fullUrl)
+
+	return
+}
+
+func getMagnet(url string) (magnet string) {
+	c := colly.NewCollector()
+
+	c.OnHTML(`a[href^="magnet:?"]`, func(e *colly.HTMLElement) {
+		magnet = e.Attr("href")
+	})
+
+	c.Visit(url)
+
+	return
 }
