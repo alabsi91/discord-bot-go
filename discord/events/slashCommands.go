@@ -1,22 +1,23 @@
-package slashCommands
+package events
 
 import (
 	"discord-bot/common"
-	"discord-bot/utils"
 
 	"github.com/bwmarrin/discordgo"
 )
 
-var Log = &utils.Log
-
 var (
-	Interactions = []*common.SlashCommand{}
-	AppCommands  = []*discordgo.ApplicationCommand{}
+	Interactions  = []*common.SlashCommand{}
+	SlashCommands = []*discordgo.ApplicationCommand{}
 )
 
-func registerCommands(c *common.SlashCommand) {
+func init() {
+	RegisterOnSlashCommandEvent(ExecuteSlashCommands)
+}
+
+func RegisterSlashCommand(c *common.SlashCommand) {
 	Interactions = append(Interactions, c)
-	AppCommands = append(AppCommands, &c.Command)
+	SlashCommands = append(SlashCommands, &c.Command)
 }
 
 func ExecuteSlashCommands(s *discordgo.Session, i *discordgo.InteractionCreate, data *discordgo.ApplicationCommandInteractionData) {

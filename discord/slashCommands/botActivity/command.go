@@ -1,7 +1,8 @@
-package slashCommands
+package botActivity
 
 import (
 	"discord-bot/common"
+	"discord-bot/discord/events"
 	"discord-bot/discord/interaction"
 	"discord-bot/firebase"
 	"discord-bot/utils"
@@ -10,7 +11,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var botActivityCommand = common.SlashCommand{
+var Log = &utils.Log
+
+var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
 		Name:        "bot-activity",
 		Description: "Change bot activity",
@@ -38,20 +41,20 @@ var botActivityCommand = common.SlashCommand{
 		},
 	},
 
-	Handler: botActivityHandler,
+	Handler: cmdHandler,
 }
 
 func init() {
-	registerCommands(&botActivityCommand)
+	events.RegisterSlashCommand(&command)
 }
 
-type botActivityOptions struct {
+type cmdOptions struct {
 	status   string                 // required
 	activity discordgo.ActivityType // required
 }
 
-func parseBotActivityOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (botActivityOptions, error) {
-	results := botActivityOptions{}
+func parseCmdOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (cmdOptions, error) {
+	results := cmdOptions{}
 
 	for _, opt := range options {
 		switch opt.Name {
@@ -74,12 +77,12 @@ func parseBotActivityOptions(options []*discordgo.ApplicationCommandInteractionD
 	return results, nil
 }
 
-func botActivityHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
+func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
 	user := utils.GetInteractionAuthor(i.Interaction)
 
 	Log.Debug(Log.Level.Info, `SlashCommand: "bot-activity", GuildID:`, i.GuildID, "ChannelID:", i.ChannelID, "UserID:", user.ID, "UserName:", user.Username)
 
-	options, err := parseBotActivityOptions(appData.Options)
+	options, err := parseCmdOptions(appData.Options)
 	if err != nil {
 		Log.Debug(Log.Level.Error, `parsing "bot-activity" command options:`, err.Error())
 		sendError := interaction.RespondWithText(s, i, fmt.Sprintf("**Error:** while parsing **bot-activity** command options:\n`%s`", err.Error()), true)

@@ -1,8 +1,9 @@
-package slashCommands
+package memeMe
 
 import (
 	"bytes"
 	"discord-bot/common"
+	"discord-bot/discord/events"
 	"discord-bot/discord/interaction"
 	"discord-bot/utils"
 	"encoding/json"
@@ -18,7 +19,9 @@ import (
 	"golang.org/x/image/font/gofont/goregular"
 )
 
-var memeMeCommand = common.SlashCommand{
+var Log = &utils.Log
+
+var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
 		Name:        "mememe",
 		Description: "Get random meme image with a text on it",
@@ -38,20 +41,20 @@ var memeMeCommand = common.SlashCommand{
 		},
 	},
 
-	Handler: memeMeHandler,
+	Handler: cmdHandler,
 }
 
 func init() {
-	registerCommands(&memeMeCommand)
+	events.RegisterSlashCommand(&command)
 }
 
-type memeMeOptions struct {
+type cmdOptions struct {
 	first_line  string // optional
 	second_line string // optional
 }
 
-func memeMeParseOptions(options []*discordgo.ApplicationCommandInteractionDataOption) memeMeOptions {
-	results := memeMeOptions{}
+func memeCmdOptions(options []*discordgo.ApplicationCommandInteractionDataOption) cmdOptions {
+	results := cmdOptions{}
 
 	for _, opt := range options {
 		switch opt.Name {
@@ -68,12 +71,12 @@ func memeMeParseOptions(options []*discordgo.ApplicationCommandInteractionDataOp
 	return results
 }
 
-func memeMeHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
+func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
 	user := utils.GetInteractionAuthor(i.Interaction)
 
 	Log.Debug(Log.Level.Info, `SlashCommand: "mememe", GuildID:`, i.GuildID, "ChannelID:", i.ChannelID, "UserID:", user.ID, "UserName:", user.Username)
 
-	options := memeMeParseOptions(appData.Options)
+	options := memeCmdOptions(appData.Options)
 
 	firstLine := options.first_line
 	secondLine := options.second_line

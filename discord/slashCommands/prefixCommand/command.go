@@ -1,7 +1,8 @@
-package slashCommands
+package prefixCommand
 
 import (
 	"discord-bot/common"
+	"discord-bot/discord/events"
 	"discord-bot/discord/interaction"
 	"discord-bot/firebase"
 	"discord-bot/utils"
@@ -10,7 +11,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var prefixCommand = common.SlashCommand{
+var Log = &utils.Log
+
+var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
 		Name:        "prefix",
 		Description: "Change/get the prefix for message commands",
@@ -36,20 +39,20 @@ var prefixCommand = common.SlashCommand{
 		},
 	},
 
-	Handler: prefixCommandHandler,
+	Handler: cmdHandler,
 }
 
 func init() {
-	registerCommands(&prefixCommand)
+	events.RegisterSlashCommand(&command)
 }
 
-type prefixCommandOptions struct {
+type cmdOptions struct {
 	subcommand string // "set" or "get"
 	prefix     string // required for "set"
 }
 
-func parsePrefixCommandOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (prefixCommandOptions, error) {
-	results := prefixCommandOptions{}
+func parseCmdOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (cmdOptions, error) {
+	results := cmdOptions{}
 
 	subcommand := options[0].Name
 	subcommandOptions := options[0].Options
@@ -76,12 +79,12 @@ func parsePrefixCommandOptions(options []*discordgo.ApplicationCommandInteractio
 	return results, nil
 }
 
-func prefixCommandHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
+func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
 	user := utils.GetInteractionAuthor(i.Interaction)
 
 	Log.Debug(Log.Level.Info, `SlashCommand: "prefix", GuildID:`, i.GuildID, "ChannelID:", i.ChannelID, "UserID:", user.ID, "UserName:", user.Username)
 
-	options, err := parsePrefixCommandOptions(appData.Options)
+	options, err := parseCmdOptions(appData.Options)
 	if err != nil {
 		Log.Debug(Log.Level.Error, `parsing "prefix" command options:`, err.Error())
 		sendError := interaction.RespondWithText(s, i, fmt.Sprintf("**Error:** while parsing **prefix** command options:\n`%s`", err.Error()), true)

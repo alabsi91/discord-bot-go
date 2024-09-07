@@ -18,7 +18,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var yts = common.SlashCommand{
+var Log = &utils.Log
+
+var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
 		Name:        "yts",
 		Description: "Search for a movie on yts database",
@@ -32,23 +34,23 @@ var yts = common.SlashCommand{
 		},
 	},
 
-	Handler: ytsHandler,
+	Handler: cmdHandler,
 }
 
 var tempYtsData *common.YtsResponse
 var tempMessageID string
 
 func init() {
-	registerCommands(&yts)
+	events.RegisterSlashCommand(&command)
 	events.RegisterComponentReactionEvent(ytsOnSelect)
 }
 
-type ytsOptions struct {
+type cmdOptions struct {
 	movie_name string // required
 }
 
-func parseYtsOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (ytsOptions, error) {
-	results := ytsOptions{}
+func parseCmdOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (cmdOptions, error) {
+	results := cmdOptions{}
 
 	for _, opt := range options {
 
@@ -66,12 +68,12 @@ func parseYtsOptions(options []*discordgo.ApplicationCommandInteractionDataOptio
 	return results, nil
 }
 
-func ytsHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
+func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
 	user := utils.GetInteractionAuthor(i.Interaction)
 
 	Log.Debug(Log.Level.Info, `SlashCommand: "yts", GuildID:`, i.GuildID, "ChannelID:", i.ChannelID, "UserID:", user.ID, "UserName:", user.Username)
 
-	options, err := parseYtsOptions(appData.Options)
+	options, err := parseCmdOptions(appData.Options)
 	if err != nil {
 		Log.Debug(Log.Level.Error, `parsing "yts" command options:`, err.Error())
 		sendErr := interaction.RespondWithText(s, i, fmt.Sprintf("**Error:** while parsing **yts** command options:\n`%s`", err.Error()), true)

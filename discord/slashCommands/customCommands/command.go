@@ -1,7 +1,8 @@
-package slashCommands
+package customCommands
 
 import (
 	"discord-bot/common"
+	"discord-bot/discord/events"
 	"discord-bot/discord/interaction"
 	"discord-bot/firebase"
 	"discord-bot/utils"
@@ -10,7 +11,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var customCommands = common.SlashCommand{
+var Log = &utils.Log
+
+var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
 		Name:        "custom-command",
 		Description: "Manage custom commands",
@@ -55,21 +58,21 @@ var customCommands = common.SlashCommand{
 		},
 	},
 
-	Handler: customCommandsHandler,
+	Handler: cmdHandler,
 }
 
 func init() {
-	registerCommands(&customCommands)
+	events.RegisterSlashCommand(&command)
 }
 
-type customCommandsOptions struct {
+type cmdOptions struct {
 	subcommand string // "set" or "remove"
 	trigger    string // required for "add" and "remove"
 	response   string // required for "add"
 }
 
-func parseCustomCommandsOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (customCommandsOptions, error) {
-	results := customCommandsOptions{}
+func parseCmdOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (cmdOptions, error) {
+	results := cmdOptions{}
 
 	subcommand := options[0].Name
 	subcommandOptions := options[0].Options
@@ -118,12 +121,12 @@ func parseCustomCommandsOptions(options []*discordgo.ApplicationCommandInteracti
 	return results, nil
 }
 
-func customCommandsHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
+func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
 	user := utils.GetInteractionAuthor(i.Interaction)
 
 	Log.Debug(Log.Level.Info, `SlashCommand: "custom-command", GuildID:`, i.GuildID, "ChannelID:", i.ChannelID, "UserID:", user.ID, "UserName:", user.Username)
 
-	options, err := parseCustomCommandsOptions(appData.Options)
+	options, err := parseCmdOptions(appData.Options)
 	if err != nil {
 		Log.Debug(Log.Level.Error, `parsing "custom-command" command options:`, err.Error())
 		sendError := interaction.RespondWithText(s, i, fmt.Sprintf("**Error:** while parsing **custom-command** command options:\n`%s`", err.Error()), true)

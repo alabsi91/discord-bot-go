@@ -1,7 +1,8 @@
-package slashCommands
+package welcomeVoiceMessage
 
 import (
 	"discord-bot/common"
+	"discord-bot/discord/events"
 	"discord-bot/discord/interaction"
 	"discord-bot/firebase"
 	"discord-bot/utils"
@@ -10,7 +11,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var welcomeVoiceMessage = common.SlashCommand{
+var Log = &utils.Log
+
+var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
 		Name:        "welcome-voice-message",
 		Description: "Set a welcome TTS message every time someone joins the voice channel",
@@ -83,22 +86,22 @@ var welcomeVoiceMessage = common.SlashCommand{
 		},
 	},
 
-	Handler: welcomeVoiceMessageHandler,
+	Handler: cmdHandler,
 }
 
 func init() {
-	registerCommands(&welcomeVoiceMessage)
+	events.RegisterSlashCommand(&command)
 }
 
-type welcomeVoiceMessageOptions struct {
+type cmdOptions struct {
 	subcommand string                                             // "set" or "remove"
 	user       *discordgo.ApplicationCommandInteractionDataOption // required for "set" and "remove"
 	message    string                                             // required for "set"
 	language   string                                             // optional
 }
 
-func parseWelcomeVoiceMessageOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (welcomeVoiceMessageOptions, error) {
-	results := welcomeVoiceMessageOptions{}
+func parseCmdOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (cmdOptions, error) {
+	results := cmdOptions{}
 
 	subcommand := options[0].Name
 	subcommandOptions := options[0].Options
@@ -149,12 +152,12 @@ func parseWelcomeVoiceMessageOptions(options []*discordgo.ApplicationCommandInte
 	return results, nil
 }
 
-func welcomeVoiceMessageHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
+func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
 	user := utils.GetInteractionAuthor(i.Interaction)
 
 	Log.Debug(Log.Level.Info, `SlashCommand: "welcome-voice-message", GuildID:`, i.GuildID, "ChannelID:", i.ChannelID, "UserID:", user.ID, "UserName:", user.Username)
 
-	options, err := parseWelcomeVoiceMessageOptions(appData.Options)
+	options, err := parseCmdOptions(appData.Options)
 	if err != nil {
 		Log.Debug(Log.Level.Error, `parsing "welcome-voice-message" command options:`, err.Error())
 		sendError := interaction.RespondWithText(s, i, fmt.Sprintf("**Error:** while parsing **welcome-voice-message** command options:\n`%s`", err.Error()), true)

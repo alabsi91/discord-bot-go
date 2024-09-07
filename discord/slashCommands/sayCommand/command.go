@@ -1,8 +1,9 @@
-package slashCommands
+package sayCommand
 
 import (
 	tts "discord-bot/TTS"
 	"discord-bot/common"
+	"discord-bot/discord/events"
 	"discord-bot/discord/interaction"
 	"discord-bot/utils"
 	"fmt"
@@ -11,7 +12,9 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
-var sayCommand = common.SlashCommand{
+var Log = &utils.Log
+
+var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{
 		Name:        "say",
 		Description: "Play a TTS message in the current voice channel",
@@ -64,21 +67,21 @@ var sayCommand = common.SlashCommand{
 		},
 	},
 
-	Handler: sayHandler,
+	Handler: cmdHandler,
 }
 
 func init() {
-	registerCommands(&sayCommand)
+	events.RegisterSlashCommand(&command)
 }
 
-type sayOptions struct {
+type cmdOptions struct {
 	message  string // required
 	language string // optional
 	slow     bool   // optional
 }
 
-func parseSayOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (sayOptions, error) {
-	results := sayOptions{}
+func parseCmdOptions(options []*discordgo.ApplicationCommandInteractionDataOption) (cmdOptions, error) {
+	results := cmdOptions{}
 	for _, opt := range options {
 
 		switch opt.Name {
@@ -108,12 +111,12 @@ func parseSayOptions(options []*discordgo.ApplicationCommandInteractionDataOptio
 	return results, nil
 }
 
-func sayHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
+func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *discordgo.ApplicationCommandInteractionData) {
 	user := utils.GetInteractionAuthor(i.Interaction)
 
 	Log.Debug(Log.Level.Info, `SlashCommand: "say", GuildID:`, i.GuildID, "ChannelID:", i.ChannelID, "UserID:", user.ID, "UserName:", user.Username)
 
-	options, err := parseSayOptions(appData.Options)
+	options, err := parseCmdOptions(appData.Options)
 	if err != nil {
 		Log.Debug(Log.Level.Error, `parsing "say" command options:`, err.Error())
 		sendError := interaction.RespondWithText(s, i, fmt.Sprintf("**Error:** while parsing **say** command options:\n`%s`", err.Error()), true)

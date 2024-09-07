@@ -3,7 +3,7 @@ package discord
 import (
 	"discord-bot/discord/dmsCommands"
 	"discord-bot/discord/events"
-	"discord-bot/discord/slashCommands"
+	_ "discord-bot/discord/slashCommands" // to initialize slash commands
 	"discord-bot/utils"
 	"os"
 
@@ -27,14 +27,13 @@ func StartDiscordBotSession() *discordgo.Session {
 	dg.AddHandler(events.OnReady)
 
 	// Register Slash Commands
-	_, err = dg.ApplicationCommandBulkOverwrite(os.Getenv("APP_ID"), "", slashCommands.AppCommands)
+	_, err = dg.ApplicationCommandBulkOverwrite(os.Getenv("APP_ID"), "", events.SlashCommands)
 	if err != nil {
 		Log.Fatal("\ncould not register commands:", err.Error())
 		Log.Debug(Log.Level.Fatal, err.Error())
 	}
 
 	// On Interaction
-	events.RegisterOnSlashCommandEvent(slashCommands.ExecuteSlashCommands)
 	dg.AddHandler(events.OnInteraction)
 
 	// On DM
