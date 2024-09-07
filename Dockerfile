@@ -1,4 +1,4 @@
-FROM alpine:latest
+FROM alpine:3.13
 
 LABEL version="1.0"
 LABEL description="Discord bot build with golang"
