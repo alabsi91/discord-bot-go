@@ -1,8 +1,6 @@
 services:
   discord-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: alabsi91/go-discord-bot
     ports:
       - 3000:3000 # should match the port in .config.json
     volumes:
