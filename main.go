@@ -59,8 +59,8 @@ func main() {
 	Log.Debug(Log.Level.Info, `Loading ".env" file...`)
 	err = godotenv.Load(*envPath)
 	if err != nil {
-		Log.Fatal("\nError loading \".env\" file", err.Error())
-		Log.Debug(Log.Level.Fatal, `Error loading ".env" file:`, err.Error())
+		Log.Warning("\nError loading \".env\" file", err.Error())
+		Log.Debug(Log.Level.Warning, `Error loading ".env" file:`, err.Error())
 	}
 
 	// firebase
