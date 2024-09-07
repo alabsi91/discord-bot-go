@@ -6,7 +6,7 @@ LABEL org.opencontainers.image.authors="alabsi91"
 
 WORKDIR /discord-bot
 
-RUN apk update && apk upgrade && apk add --no-cache wget tar git ffmpeg && \
+RUN apk update && apk upgrade && apk add --no-cache wget tar git ffmpeg shadow && \
     # install golang
     wget https://go.dev/dl/go1.23.1.linux-amd64.tar.gz && \ 
     tar -C /usr/local -xzf go1.23.1.linux-amd64.tar.gz && \
@@ -24,4 +24,4 @@ RUN apk update && apk upgrade && apk add --no-cache wget tar git ffmpeg && \
     rm -rf /root/.cache && \
     rm -rf /var/cache/apk/*
 
-CMD [ "./discord-bot" ]
+CMD ["sh", "-c", "groupadd -g $GID appgroup && useradd -r -u $UID -g appgroup appuser && chown -R appuser:appgroup /discord-bot && exec su appuser -c './discord-bot'"]
