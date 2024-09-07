@@ -1,0 +1,15 @@
+services:
+  discord-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - 3000:3000 # should match the port in .config.json
+    volumes:
+      - <path to .config.json>:/discord-bot/.config.json # point to .config.json
+      - <path to download dir>:/discord-bot/downloads # should match the path in .config.json
+      #- <path to .env file>:/discord-bot/.env # you can skip setting `environment` if you prepare your own .env file
+    environment:
+      - TOKEN=<YOUR_BOT_TOKEN>
+      - APP_ID=<YOUR_DISCORD_APP_ID>
+      - 'SERVICE_ACCOUNT_KEY=<FIREBASE_SERVICE_ACCOUNT_KEY_JSON>'
