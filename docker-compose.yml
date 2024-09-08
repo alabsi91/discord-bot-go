@@ -1,6 +1,6 @@
 services:
   discord-bot:
-    image: alabsi91/go-discord-bot
+    image: alabsi91/go-discord-bot:latest
     ports:
       - 3000:3000 # should match the port in .config.json
     volumes:

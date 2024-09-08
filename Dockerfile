@@ -24,4 +24,4 @@ RUN apk update && apk upgrade && apk add --no-cache wget tar git ffmpeg shadow &
     rm -rf /root/.cache && \
     rm -rf /var/cache/apk/*
 
-CMD ["sh", "-c", "groupadd -g $GID appgroup && useradd -r -u $UID -g appgroup appuser && chown -R appuser:appgroup /discord-bot && exec su appuser -c './discord-bot'"]
+CMD ["sh", "-c", "groupadd -g $GID appgroup && useradd -r -u $UID -g appgroup appuser && chown -R appuser:appgroup /discord-bot; exec su appuser -c './discord-bot'"]
