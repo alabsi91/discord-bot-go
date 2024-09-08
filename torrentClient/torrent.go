@@ -13,6 +13,7 @@ import (
 var Log = utils.Log
 
 type TorrentInfo struct {
+	Name          string
 	Status        string
 	Downloaded    string
 	Uploaded      string
@@ -152,6 +153,7 @@ func generateStatsHandler(tor *torrent.Torrent) func() TorrentInfo {
 		isSeeding := s.Status == torrent.Seeding
 
 		return TorrentInfo{
+			Name:          s.Name,
 			Status:        s.Status.String(),
 			Downloaded:    formatBytes(s.Bytes.Completed),
 			Uploaded:      formatBytes(s.Bytes.Uploaded),

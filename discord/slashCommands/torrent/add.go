@@ -83,6 +83,7 @@ func addTorrent(s *discordgo.Session, i *discordgo.InteractionCreate, uri *strin
 			}
 
 			format := fmt.Sprint(
+				state.Name, "_\n",
 				"\u200b\n",
 				"**Status:** _", state.Status, "_\n",
 				"**Progress:** `", state.Progress, "`\n",
