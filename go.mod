@@ -82,7 +82,6 @@ require (
 	golang.org/x/oauth2 v0.22.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.23.0 // indirect
-	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.6.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto v0.0.0-20240814211410-ddb44dafa142 // indirect
@@ -92,7 +91,10 @@ require (
 	lukechampine.com/blake3 v1.1.6 // indirect
 )
 
-require github.com/cenkalti/rain v1.12.19
+require (
+	github.com/cenkalti/rain v1.12.19
+	golang.org/x/text v0.17.0
+)
 
 require (
 	github.com/gocolly/colly/v2 v2.1.0

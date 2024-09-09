@@ -255,6 +255,11 @@ func onComponentReaction(s *discordgo.Session, i *discordgo.InteractionCreate, d
 		nextPageButton(s, i)
 		return
 	}
+
+	if strings.HasPrefix(data.CustomID, "search_download") {
+		searchDownloadButton(data, s, i)
+		return
+	}
 }
 
 func getVideoUrls(tor *torrent.Torrent) ([]string, error) {

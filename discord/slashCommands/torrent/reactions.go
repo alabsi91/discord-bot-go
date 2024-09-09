@@ -1,15 +1,19 @@
 package torrentCommand
 
 import (
+	"discord-bot/common"
 	"discord-bot/discord/components"
 	"discord-bot/discord/interaction"
 	"discord-bot/torrentClient"
 	"discord-bot/utils"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/bwmarrin/discordgo"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 func ytsListOnSelect(data *discordgo.MessageComponentInteractionData, s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -204,19 +208,48 @@ func onSearchListSelect(data *discordgo.MessageComponentInteractionData, s *disc
 	searchIndex, err := strconv.Atoi(searchIndexStr)
 
 	if searchTmp == nil || err != nil || searchIndex < 0 || searchIndex >= len(searchTmp.Results) {
-		sendErr := interaction.RespondEdit(s, i, "No search results found.")
+		sendErr := interaction.RespondWithText(s, i, "No search results found.", false)
 		if sendErr != nil {
 			Log.Error("\nTorrent:", sendErr.Error())
 			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
 		}
 		return
+	}
+
+	// should edit or send new embed
+	shouldEdit := false
+	messageId := ""
+	messages, err := s.ChannelMessages(i.ChannelID, 1, "", "", "")
+	if err == nil && len(messages) > 0 {
+		embeds := messages[0].Embeds
+		for _, embeds := range embeds {
+			if strings.Contains(embeds.Footer.Text, "1337x.to") {
+				shouldEdit = true
+				messageId = messages[0].ID
+				break
+			}
+		}
 	}
 
 	searchResult := searchTmp.Results[searchIndex]
-	magnet := getMagnet(searchResult.Url)
 
-	if magnet == "" {
-		sendErr := interaction.RespondEdit(s, i, "No magnet link found.")
+	if shouldEdit {
+		sendErr := interaction.RespondWithNothing(s, i)
+		if sendErr != nil {
+			Log.Error("\nTorrent:", sendErr.Error())
+			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+		}
+
+		_, sendErr = s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+			Channel: i.ChannelID,
+			ID:      messageId,
+			Embeds:  &[]*discordgo.MessageEmbed{createSearchDetailEmbed(searchResult)},
+			Components: components.AddMessageComponents(
+				components.NewRow(
+					components.NewButton().SetLabel("Download").SetCustomID("search_download:" + searchIndexStr).SetStyleSecondary(),
+				),
+			),
+		})
 		if sendErr != nil {
 			Log.Error("\nTorrent:", sendErr.Error())
 			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
@@ -224,7 +257,21 @@ func onSearchListSelect(data *discordgo.MessageComponentInteractionData, s *disc
 		return
 	}
 
-	addTorrent(s, i, &magnet, nil)
+	sendErr := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
+		Type: discordgo.InteractionResponseChannelMessageWithSource,
+		Data: &discordgo.InteractionResponseData{
+			Embeds: []*discordgo.MessageEmbed{createSearchDetailEmbed(searchResult)},
+			Components: *components.AddMessageComponents(
+				components.NewRow(
+					components.NewButton().SetLabel("Download").SetCustomID("search_download:" + searchIndexStr).SetStyleSecondary(),
+				),
+			),
+		},
+	})
+	if sendErr != nil {
+		Log.Error("\nTorrent:", sendErr.Error())
+		Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+	}
 }
 
 func nextPageButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -297,4 +344,104 @@ func nextPageButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
 	if sendErr != nil {
 		Log.Error("\nTorrent:", `sending a respond for "torrent" command:`, sendErr.Error())
 	}
+}
+
+func searchDownloadButton(data *discordgo.MessageComponentInteractionData, s *discordgo.Session, i *discordgo.InteractionCreate) {
+	indexStr := strings.Split(data.CustomID, ":")[1]
+	searchIndex, err := strconv.Atoi(indexStr)
+
+	if searchTmp == nil || err != nil || searchIndex < 0 || searchIndex >= len(searchTmp.Results) {
+		sendErr := interaction.RespondWithText(s, i, "No search results found.", false)
+		if sendErr != nil {
+			Log.Error("\nTorrent:", sendErr.Error())
+			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+		}
+		return
+	}
+
+	searchResult := searchTmp.Results[searchIndex]
+	magnet := getMagnet(searchResult.Url)
+
+	if magnet == "" {
+		sendErr := interaction.RespondEdit(s, i, "No magnet link found.")
+		if sendErr != nil {
+			Log.Error("\nTorrent:", sendErr.Error())
+			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
+		}
+		return
+	}
+
+	err = s.ChannelMessageDelete(i.ChannelID, i.Message.ID)
+	if err != nil {
+		Log.Error("\nTorrent:", err.Error())
+		Log.Debug(Log.Level.Error, "deleting a channel:", err.Error())
+	}
+
+	addTorrent(s, i, &magnet, nil)
+}
+
+// utils
+
+func createSearchDetailEmbed(result common.SearchResult) *discordgo.MessageEmbed {
+	embed := components.NewEmbed().
+		SetColor(0xf14e13).
+		SetTitle(result.Name).
+		SetURL(result.Url).
+		AddField("\u200b\n"+cleanTitle(result.Name), "\u200b", false).
+		AddField("Resolution", extractResolution(result.Name), true).
+		AddField("Quality", extractQuality(result.Name), true).
+		AddField("Date", result.Date, true).
+		AddField("\u200b", "", false).
+		AddField("Size", result.Size, true).
+		AddField("Seeds", result.Seeds, true).
+		AddField("Leeches", result.Leeches, true).
+		AddField("\u200b", "", false).
+		SetFooter("Powered by 1337x.to")
+
+	return embed.Into()
+}
+
+func cleanTitle(name string) string {
+	re := regexp.MustCompile(`(?i)(?:(?:\s|\.)?.+?(?:\s|\.)?)+(?:(?:\bS\d{2}E\d{2}\b)|(?:\bS\d{2}\b)|(?:\b(?:19|20)\d{2}\b))`)
+	match := re.FindString(name)
+
+	// Remove special characters
+	spacialChars := regexp.MustCompile(`[^\w\s]`)
+	match = spacialChars.ReplaceAllString(match, " ")
+	match = strings.ReplaceAll(match, "  ", " ")
+
+	// Capitalize first letter
+	match = cases.Title(language.English).String(match)
+
+	// Capitalize season and episode
+	re = regexp.MustCompile(`(?i)\bS\d{2}E\d{2}\b`)
+	SE := re.FindString(match)
+	if SE != "" {
+		match = strings.ReplaceAll(match, SE, strings.ToUpper(SE))
+	}
+
+	// trim
+	match = strings.TrimSpace(match)
+
+	return match
+}
+
+func extractResolution(name string) string {
+	resolutions := []string{"2160p", "1080p", "720p", "480p", "360p", "240p", "144p"}
+	for _, resolution := range resolutions {
+		if strings.Contains(name, resolution) {
+			return resolution
+		}
+	}
+	return "unknown"
+}
+
+func extractQuality(name string) string {
+	qualities := []string{"WEBRip", "WEB-DL", "WEB", "BluRay", "DVDRip", "HDTV", "HDTS", "HDRip", "CAM", "TVRip"}
+	for _, quality := range qualities {
+		if strings.Contains(strings.ToLower(name), strings.ToLower(quality)) {
+			return quality
+		}
+	}
+	return "unknown"
 }

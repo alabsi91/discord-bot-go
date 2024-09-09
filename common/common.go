@@ -231,6 +231,10 @@ const (
 )
 
 type SearchResult struct {
-	Name string
-	Url  string
+	Name    string
+	Url     string
+	Size    string
+	Seeds   string
+	Leeches string
+	Date    string
 }

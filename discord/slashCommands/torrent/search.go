@@ -65,7 +65,7 @@ func searchTorrent(s *discordgo.Session, i *discordgo.InteractionCreate, options
 	sendErr = interaction.RespondEditWithComponents(s, i, &content,
 		components.AddMessageComponents(
 			components.NewRow(
-				components.NewSelectMenu().SetStringType().SetPlaceholder("Select a result to download").
+				components.NewSelectMenu().SetStringType().SetPlaceholder("Select a result to show details").
 					SetCustomID("search_list").
 					SetOptions(menuOptions...),
 			),
@@ -107,9 +107,51 @@ func search_1337x(query string, category common.X1337xCategory, sort common.X133
 
 	c := colly.NewCollector()
 
+	// URL and Name
 	c.OnHTML(`a[href^="/torrent"]`, func(e *colly.HTMLElement) {
 		href := baseUrl + e.Attr("href")
 		results = append(results, common.SearchResult{Url: href, Name: e.Text})
+	})
+
+	// Size
+	sizeIndex := 0
+	c.OnHTML(`.coll-4.size`, func(e *colly.HTMLElement) {
+		if sizeIndex >= len(results) {
+			return
+		}
+		size := e.DOM.Contents().Not("span").Text()
+		results[sizeIndex].Size = size
+		sizeIndex++
+	})
+
+	// Seeds
+	seedsIndex := 0
+	c.OnHTML(`.coll-2.seeds`, func(e *colly.HTMLElement) {
+		if seedsIndex >= len(results) {
+			return
+		}
+		results[seedsIndex].Seeds = e.Text
+		seedsIndex++
+	})
+
+	// Leeches
+	leechesIndex := 0
+	c.OnHTML(`.coll-3.leeches`, func(e *colly.HTMLElement) {
+		if leechesIndex >= len(results) {
+			return
+		}
+		results[leechesIndex].Leeches = e.Text
+		leechesIndex++
+	})
+
+	// Date
+	dateIndex := 0
+	c.OnHTML(`tbody .coll-date`, func(e *colly.HTMLElement) {
+		if dateIndex >= len(results) {
+			return
+		}
+		results[dateIndex].Date = e.Text
+		dateIndex++
 	})
 
 	c.Visit(fullUrl)
