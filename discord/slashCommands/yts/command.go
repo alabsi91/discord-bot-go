@@ -130,57 +130,6 @@ func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *d
 		return
 	}
 
-	if moviesLength == 1 {
-		singleMovie := &ytsResponse.Data.Movies[0]
-
-		generateLinksOptions := func() []*components.SelectMenuOption {
-			var options []*components.SelectMenuOption
-			for _, torrent := range singleMovie.Torrents {
-				label := fmt.Sprintf("%s.%s(%s)", torrent.Quality, torrent.Type, torrent.Size)
-				options = append(options, components.NewMenuOption().SetLabel(label).SetValue(torrent.URL))
-			}
-			return options
-		}
-
-		content := "_This message will be deleted in `1` minute._\n\u200b\n"
-		msg, sendErr := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Content: &content,
-			Embeds:  &[]*discordgo.MessageEmbed{createMovieEmbed(singleMovie)},
-			Components: components.AddMessageComponents(
-				components.NewRow(
-					components.NewSelectMenu().SetStringType().SetCustomID("yts_torrents").
-						SetPlaceholder("Select a torrent to download").
-						SetOptions(generateLinksOptions()...),
-				),
-			),
-		})
-		if sendErr != nil {
-			Log.Error("\nYTS:", sendErr.Error())
-			Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, sendErr.Error())
-		}
-
-		searchTmp[i.GuildID+i.ChannelID] = &SearchTmp{Movies: ytsResponse.Data.Movies, ChannelID: i.ChannelID, MsgID: msg.ID}
-
-		go func() {
-			<-time.After(time.Minute)
-
-			search, ok := searchTmp[i.GuildID+i.ChannelID]
-			if !ok {
-				return
-			}
-
-			err := s.ChannelMessageDelete(search.ChannelID, search.MsgID)
-			if err != nil {
-				Log.Error("\nTorrent:", err.Error())
-				Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
-			}
-
-			delete(searchTmp, i.GuildID+i.ChannelID)
-		}()
-
-		return
-	}
-
 	msg, err := createSelectMenu(s, i, ytsResponse)
 	if err != nil {
 		Log.Error("\nYTS:", err.Error())

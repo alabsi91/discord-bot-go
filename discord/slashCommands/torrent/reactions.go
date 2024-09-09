@@ -389,12 +389,6 @@ func searchDownloadButton(data *discordgo.MessageComponentInteractionData, s *di
 		return
 	}
 
-	err = s.ChannelMessageDelete(i.ChannelID, i.Message.ID)
-	if err != nil {
-		Log.Error("\nTorrent:", err.Error())
-		Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
-	}
-
 	addTorrent(s, i, &magnet, nil)
 }
 
