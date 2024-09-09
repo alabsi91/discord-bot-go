@@ -17,11 +17,15 @@ import (
 var Log = &utils.Log
 
 type SearchTmp struct {
-	Options *cmdOptions
-	Results []common.SearchResult
+	Options    *cmdOptions
+	Results    []common.SearchResult
+	ChannelID  string
+	MsgID      string
+	EmbedMsgID string
 }
 
-var searchTmp *SearchTmp
+// store the key as [guildID+channelID]
+var searchTmp = map[string]*SearchTmp{}
 
 var command = common.SlashCommand{
 	Command: discordgo.ApplicationCommand{

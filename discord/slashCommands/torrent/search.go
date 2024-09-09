@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gocolly/colly/v2"
@@ -21,7 +22,15 @@ func searchTorrent(s *discordgo.Session, i *discordgo.InteractionCreate, options
 		return
 	}
 
-	searchTmp = nil
+	// remove previous search message in this channel
+	search, ok := searchTmp[i.GuildID+i.ChannelID]
+	if ok {
+		err := s.ChannelMessageDelete(search.ChannelID, search.MsgID)
+		if err != nil {
+			Log.Error("\nTorrent:", err.Error())
+			Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
+		}
+	}
 
 	if options.page < 1 {
 		options.page = 1
@@ -38,7 +47,7 @@ func searchTorrent(s *discordgo.Session, i *discordgo.InteractionCreate, options
 		return
 	}
 
-	searchTmp = &SearchTmp{Options: options, Results: results}
+	searchTmp[i.GuildID+i.ChannelID] = &SearchTmp{Options: options, Results: results, ChannelID: i.ChannelID}
 
 	menuOptions := []*components.SelectMenuOption{}
 	for i, result := range results {
@@ -57,13 +66,15 @@ func searchTorrent(s *discordgo.Session, i *discordgo.InteractionCreate, options
 		menuOptions = append(menuOptions, components.NewMenuOption().SetLabel(name).SetValue(strconv.Itoa(i)))
 	}
 
-	content := fmt.Sprintf("Found %d results\n **Page:** `%d`", len(results), options.page)
+	content := "_This message Will be deleted in `1` minute_\n\u200b\n"
+	content += fmt.Sprintf("**Page:** `%d` has `%d` results:\n ", options.page, len(results))
 	if len(results) > 25 {
 		content += "\n (Can only show 25 torrents at once)"
 	}
 
-	sendErr = interaction.RespondEditWithComponents(s, i, &content,
-		components.AddMessageComponents(
+	msg, sendErr := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Content: &content,
+		Components: components.AddMessageComponents(
 			components.NewRow(
 				components.NewSelectMenu().SetStringType().SetPlaceholder("Select a result to show details").
 					SetCustomID("search_list").
@@ -73,11 +84,39 @@ func searchTorrent(s *discordgo.Session, i *discordgo.InteractionCreate, options
 				components.NewButton().SetLabel("Next Page").SetCustomID("next_page"),
 			),
 		),
-	)
-
+	})
 	if sendErr != nil {
 		Log.Error("\nTorrent:", `sending a respond for "torrent" command:`, sendErr.Error())
 	}
+
+	searchTmp[i.GuildID+i.ChannelID].MsgID = msg.ID
+
+	// delete self after 1 minute
+	go func() {
+		<-time.After(time.Minute)
+
+		search, ok := searchTmp[i.GuildID+i.ChannelID]
+		if !ok {
+			return
+		}
+
+		// remove embed message also
+		if search.EmbedMsgID != "" {
+			err := s.ChannelMessageDelete(search.ChannelID, search.EmbedMsgID)
+			if err != nil {
+				Log.Error("\nTorrent:", err.Error())
+				Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
+			}
+		}
+
+		err := s.ChannelMessageDelete(search.ChannelID, search.MsgID)
+		if err != nil {
+			Log.Error("\nTorrent:", err.Error())
+			Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
+		}
+
+		delete(searchTmp, i.GuildID+i.ChannelID) // reset
+	}()
 }
 
 func search_1337x(query string, category common.X1337xCategory, sort common.X1337xSort, page int) (results []common.SearchResult) {

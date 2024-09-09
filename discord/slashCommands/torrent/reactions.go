@@ -207,7 +207,9 @@ func onSearchListSelect(data *discordgo.MessageComponentInteractionData, s *disc
 	searchIndexStr := data.Values[0]
 	searchIndex, err := strconv.Atoi(searchIndexStr)
 
-	if searchTmp == nil || err != nil || searchIndex < 0 || searchIndex >= len(searchTmp.Results) {
+	search, ok := searchTmp[i.GuildID+i.ChannelID]
+
+	if !ok || err != nil || searchIndex < 0 || searchIndex >= len(search.Results) {
 		sendErr := interaction.RespondWithText(s, i, "No search results found.", false)
 		if sendErr != nil {
 			Log.Error("\nTorrent:", sendErr.Error())
@@ -231,7 +233,7 @@ func onSearchListSelect(data *discordgo.MessageComponentInteractionData, s *disc
 		}
 	}
 
-	searchResult := searchTmp.Results[searchIndex]
+	searchResult := search.Results[searchIndex]
 
 	if shouldEdit {
 		sendErr := interaction.RespondWithNothing(s, i)
@@ -240,9 +242,11 @@ func onSearchListSelect(data *discordgo.MessageComponentInteractionData, s *disc
 			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
 		}
 
+		content := "_This message will be deleted also._\n"
 		_, sendErr = s.ChannelMessageEditComplex(&discordgo.MessageEdit{
 			Channel: i.ChannelID,
 			ID:      messageId,
+			Content: &content,
 			Embeds:  &[]*discordgo.MessageEmbed{createSearchDetailEmbed(searchResult)},
 			Components: components.AddMessageComponents(
 				components.NewRow(
@@ -254,13 +258,16 @@ func onSearchListSelect(data *discordgo.MessageComponentInteractionData, s *disc
 			Log.Error("\nTorrent:", sendErr.Error())
 			Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
 		}
+
 		return
 	}
 
+	content := "_This message will be deleted also_\n"
 	sendErr := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Embeds: []*discordgo.MessageEmbed{createSearchDetailEmbed(searchResult)},
+			Content: content,
+			Embeds:  []*discordgo.MessageEmbed{createSearchDetailEmbed(searchResult)},
 			Components: *components.AddMessageComponents(
 				components.NewRow(
 					components.NewButton().SetLabel("Download").SetCustomID("search_download:" + searchIndexStr).SetStyleSecondary(),
@@ -272,6 +279,14 @@ func onSearchListSelect(data *discordgo.MessageComponentInteractionData, s *disc
 		Log.Error("\nTorrent:", sendErr.Error())
 		Log.Debug(Log.Level.Error, `sending a respond for "torrent" command:`, sendErr.Error())
 	}
+
+	// get message id to remove later
+	msg, followupErr := s.InteractionResponse(i.Interaction)
+	if followupErr != nil {
+		Log.Error("Failed to retrieve response message: ", followupErr.Error())
+		return
+	}
+	search.EmbedMsgID = msg.ID
 }
 
 func nextPageButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
@@ -282,7 +297,8 @@ func nextPageButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	if searchTmp == nil {
+	search, ok := searchTmp[i.GuildID+i.ChannelID]
+	if !ok {
 		sendErr = interaction.RespondEdit(s, i, "No previous page")
 		if sendErr != nil {
 			Log.Error("\nTorrent:", sendErr.Error())
@@ -291,9 +307,9 @@ func nextPageButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	searchTmp.Options.page += 1
+	search.Options.page += 1
 
-	results := search_1337x(searchTmp.Options.query, searchTmp.Options.category, searchTmp.Options.sort, searchTmp.Options.page)
+	results := search_1337x(search.Options.query, search.Options.category, search.Options.sort, search.Options.page)
 
 	if len(results) == 0 {
 		sendErr = interaction.RespondEdit(s, i, "No results found.")
@@ -304,7 +320,7 @@ func nextPageButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		return
 	}
 
-	searchTmp.Results = results
+	search.Results = results
 
 	menuOptions := []*components.SelectMenuOption{}
 	for i, result := range results {
@@ -323,7 +339,8 @@ func nextPageButton(s *discordgo.Session, i *discordgo.InteractionCreate) {
 		menuOptions = append(menuOptions, components.NewMenuOption().SetLabel(name).SetValue(strconv.Itoa(i)))
 	}
 
-	content := fmt.Sprintf("Found %d results\n **Page:** `%d`", len(results), searchTmp.Options.page)
+	content := "_This message Will be deleted in `1` minute_\n\u200b\n"
+	content += fmt.Sprintf("**Page:** `%d` has `%d` results:\n ", search.Options.page, len(results))
 	if len(results) > 25 {
 		content += "\n (Can only show 25 torrents at once)"
 	}
@@ -350,7 +367,8 @@ func searchDownloadButton(data *discordgo.MessageComponentInteractionData, s *di
 	indexStr := strings.Split(data.CustomID, ":")[1]
 	searchIndex, err := strconv.Atoi(indexStr)
 
-	if searchTmp == nil || err != nil || searchIndex < 0 || searchIndex >= len(searchTmp.Results) {
+	search, ok := searchTmp[i.GuildID+i.ChannelID]
+	if !ok || err != nil || searchIndex < 0 || searchIndex >= len(search.Results) {
 		sendErr := interaction.RespondWithText(s, i, "No search results found.", false)
 		if sendErr != nil {
 			Log.Error("\nTorrent:", sendErr.Error())
@@ -359,7 +377,7 @@ func searchDownloadButton(data *discordgo.MessageComponentInteractionData, s *di
 		return
 	}
 
-	searchResult := searchTmp.Results[searchIndex]
+	searchResult := search.Results[searchIndex]
 	magnet := getMagnet(searchResult.Url)
 
 	if magnet == "" {
@@ -374,7 +392,7 @@ func searchDownloadButton(data *discordgo.MessageComponentInteractionData, s *di
 	err = s.ChannelMessageDelete(i.ChannelID, i.Message.ID)
 	if err != nil {
 		Log.Error("\nTorrent:", err.Error())
-		Log.Debug(Log.Level.Error, "deleting a channel:", err.Error())
+		Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
 	}
 
 	addTorrent(s, i, &magnet, nil)

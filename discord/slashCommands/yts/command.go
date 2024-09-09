@@ -37,8 +37,15 @@ var command = common.SlashCommand{
 	Handler: cmdHandler,
 }
 
-var tempYtsData *common.YtsResponse
-var tempMessageID string
+type SearchTmp struct {
+	Movies     []common.Movie
+	ChannelID  string
+	MsgID      string
+	EmbedMsgID string
+}
+
+// the key is [guildID+channelID]
+var searchTmp = map[string]*SearchTmp{}
 
 func init() {
 	events.RegisterSlashCommand(&command)
@@ -84,13 +91,21 @@ func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *d
 		return
 	}
 
-	tempMessageID = "" // reset
-
-	sendErr := interaction.RespondWithThinking(s, i, true)
+	sendErr := interaction.RespondWithThinking(s, i, false)
 	if sendErr != nil {
 		Log.Error("\nYTS:", sendErr.Error())
 		Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, sendErr.Error())
 		return
+	}
+
+	// remove previous messages
+	search, ok := searchTmp[i.GuildID+i.ChannelID]
+	if ok {
+		err := s.ChannelMessageDelete(search.ChannelID, search.MsgID)
+		if err != nil {
+			Log.Error("\nTorrent:", err.Error())
+			Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
+		}
 	}
 
 	ytsResponse, err := fetchYtsMovies(options.movie_name)
@@ -127,8 +142,10 @@ func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *d
 			return options
 		}
 
-		_, sendErr = s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
-			Embeds: &[]*discordgo.MessageEmbed{createMovieEmbed(singleMovie)},
+		content := "_This message will be deleted in `1` minute._\n\u200b\n"
+		msg, sendErr := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+			Content: &content,
+			Embeds:  &[]*discordgo.MessageEmbed{createMovieEmbed(singleMovie)},
 			Components: components.AddMessageComponents(
 				components.NewRow(
 					components.NewSelectMenu().SetStringType().SetCustomID("yts_torrents").
@@ -141,16 +158,63 @@ func cmdHandler(s *discordgo.Session, i *discordgo.InteractionCreate, appData *d
 			Log.Error("\nYTS:", sendErr.Error())
 			Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, sendErr.Error())
 		}
+
+		searchTmp[i.GuildID+i.ChannelID] = &SearchTmp{Movies: ytsResponse.Data.Movies, ChannelID: i.ChannelID, MsgID: msg.ID}
+
+		go func() {
+			<-time.After(time.Minute)
+
+			search, ok := searchTmp[i.GuildID+i.ChannelID]
+			if !ok {
+				return
+			}
+
+			err := s.ChannelMessageDelete(search.ChannelID, search.MsgID)
+			if err != nil {
+				Log.Error("\nTorrent:", err.Error())
+				Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
+			}
+
+			delete(searchTmp, i.GuildID+i.ChannelID)
+		}()
+
 		return
 	}
 
-	tempYtsData = ytsResponse // save for later when the user selects a movie from the select menu
-
-	err = createSelectMenu(s, i, ytsResponse)
+	msg, err := createSelectMenu(s, i, ytsResponse)
 	if err != nil {
 		Log.Error("\nYTS:", err.Error())
 		Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, err.Error())
 	}
+
+	// save for later when the user selects a movie from the select menu
+	searchTmp[i.GuildID+i.ChannelID] = &SearchTmp{Movies: ytsResponse.Data.Movies, ChannelID: i.ChannelID, MsgID: msg.ID}
+
+	go func() {
+		<-time.After(time.Minute)
+
+		search, ok := searchTmp[i.GuildID+i.ChannelID]
+		if !ok {
+			return
+		}
+
+		// remove embed message also
+		if search.EmbedMsgID != "" {
+			err := s.ChannelMessageDelete(search.ChannelID, search.EmbedMsgID)
+			if err != nil {
+				Log.Error("\nTorrent:", err.Error())
+				Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
+			}
+		}
+
+		err := s.ChannelMessageDelete(search.ChannelID, search.MsgID)
+		if err != nil {
+			Log.Error("\nTorrent:", err.Error())
+			Log.Debug(Log.Level.Error, "deleting a message:", err.Error())
+		}
+
+		delete(searchTmp, i.GuildID+i.ChannelID)
+	}()
 }
 
 // ytsOnSelect is called when the user selects a movie from the select menu
@@ -168,11 +232,9 @@ func ytsOnSelect(s *discordgo.Session, i *discordgo.InteractionCreate, data *dis
 		return
 	}
 
-	var selectedMovie *common.Movie
+	search, ok := searchTmp[i.GuildID+i.ChannelID]
 
-	if tempYtsData != nil && tempYtsData.Data.Movies != nil && len(tempYtsData.Data.Movies) > movieIndex {
-		selectedMovie = &tempYtsData.Data.Movies[movieIndex]
-	} else {
+	if !ok || search.Movies == nil || movieIndex < 0 || movieIndex >= len(search.Movies) {
 		sendErr := interaction.RespondWithText(s, i, "**Error:** No results found", true)
 		if sendErr != nil {
 			Log.Error("\nYTS:", sendErr.Error())
@@ -180,6 +242,8 @@ func ytsOnSelect(s *discordgo.Session, i *discordgo.InteractionCreate, data *dis
 		}
 		return
 	}
+
+	selectedMovie := &search.Movies[movieIndex]
 
 	generateLinksOptions := func() []*components.SelectMenuOption {
 		var options []*components.SelectMenuOption
@@ -190,50 +254,59 @@ func ytsOnSelect(s *discordgo.Session, i *discordgo.InteractionCreate, data *dis
 		return options
 	}
 
-	// check if should we respond with new embed or update the current
-	if tempMessageID != "" {
-		isLatest, editMsgErr := utils.IsMessageLatest(s, i.ChannelID, tempMessageID)
-		if editMsgErr != nil {
-			Log.Error("\nYTS:", editMsgErr.Error())
-			Log.Debug(Log.Level.Error, editMsgErr.Error())
+	// should edit or send new embed
+	shouldEdit := false
+	messageId := ""
+	messages, err := s.ChannelMessages(i.ChannelID, 1, "", "", "")
+	if err == nil && len(messages) > 0 {
+		embeds := messages[0].Embeds
+		for _, embeds := range embeds {
+			if strings.Contains(embeds.Footer.Text, "yts.mx") {
+				shouldEdit = true
+				messageId = messages[0].ID
+				break
+			}
 		}
+	}
 
-		if isLatest {
-			sendErr := interaction.RespondWithNothing(s, i)
-			if sendErr != nil {
-				Log.Error("\nYTS:", sendErr.Error())
-				Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, sendErr.Error())
-				return
-			}
-
-			// update the embed
-			_, editMsgErr = s.ChannelMessageEditComplex(&discordgo.MessageEdit{
-				Channel: i.ChannelID,
-				ID:      tempMessageID,
-				Embeds:  &[]*discordgo.MessageEmbed{createMovieEmbed(selectedMovie)},
-				Components: components.AddMessageComponents(
-					components.NewRow(
-						components.NewSelectMenu().SetStringType().SetCustomID("yts_torrents").
-							SetPlaceholder("Select a torrent to download").
-							SetOptions(generateLinksOptions()...),
-					),
-				),
-			})
-			if editMsgErr != nil {
-				Log.Error("\nYTS:", editMsgErr.Error())
-				Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, editMsgErr.Error())
-			}
+	// check if should we respond with new embed or update the current
+	if shouldEdit {
+		sendErr := interaction.RespondWithNothing(s, i)
+		if sendErr != nil {
+			Log.Error("\nYTS:", sendErr.Error())
+			Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, sendErr.Error())
 			return
 		}
 
-		tempMessageID = "" // reset
+		// update the embed
+		content := "_This message will be deleted also._"
+		_, editMsgErr := s.ChannelMessageEditComplex(&discordgo.MessageEdit{
+			Channel: i.ChannelID,
+			ID:      messageId,
+			Content: &content,
+			Embeds:  &[]*discordgo.MessageEmbed{createMovieEmbed(selectedMovie)},
+			Components: components.AddMessageComponents(
+				components.NewRow(
+					components.NewSelectMenu().SetStringType().SetCustomID("yts_torrents").
+						SetPlaceholder("Select a torrent to download").
+						SetOptions(generateLinksOptions()...),
+				),
+			),
+		})
+		if editMsgErr != nil {
+			Log.Error("\nYTS:", editMsgErr.Error())
+			Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, editMsgErr.Error())
+		}
+		return
 	}
 
 	// Respond with embed
+	content := "_This message will be deleted also._"
 	sendErr := s.InteractionRespond(i.Interaction, &discordgo.InteractionResponse{
 		Type: discordgo.InteractionResponseChannelMessageWithSource,
 		Data: &discordgo.InteractionResponseData{
-			Embeds: []*discordgo.MessageEmbed{createMovieEmbed(selectedMovie)},
+			Content: content,
+			Embeds:  []*discordgo.MessageEmbed{createMovieEmbed(selectedMovie)},
 			Components: *components.AddMessageComponents(
 				components.NewRow(
 					components.NewSelectMenu().SetStringType().SetCustomID("yts_torrents").
@@ -249,16 +322,15 @@ func ytsOnSelect(s *discordgo.Session, i *discordgo.InteractionCreate, data *dis
 		return
 	}
 
-	// Get the interaction response
-	interactionResponse, sendErr := s.InteractionResponse(i.Interaction)
+	// Get the message ID to delete later
+	msg, sendErr := s.InteractionResponse(i.Interaction)
 	if sendErr != nil {
 		Log.Error("\nYTS:", sendErr.Error())
 		Log.Debug(Log.Level.Error, `sending a respond for "yts" command:`, sendErr.Error())
 		return
 	}
 
-	// Get the message ID from the interaction response
-	tempMessageID = interactionResponse.ID
+	search.EmbedMsgID = msg.ID
 }
 
 // fetchYtsMovies search the yts database for a movie by name
@@ -290,7 +362,7 @@ func fetchYtsMovies(movieName string) (*common.YtsResponse, error) {
 }
 
 // createSelectMenu send a select menu of movies to the user
-func createSelectMenu(s *discordgo.Session, i *discordgo.InteractionCreate, ytsData *common.YtsResponse) error {
+func createSelectMenu(s *discordgo.Session, i *discordgo.InteractionCreate, ytsData *common.YtsResponse) (*discordgo.Message, error) {
 	length := len(ytsData.Data.Movies)
 
 	menuOptions := make([]*components.SelectMenuOption, length)
@@ -300,10 +372,12 @@ func createSelectMenu(s *discordgo.Session, i *discordgo.InteractionCreate, ytsD
 		menuOptions[i] = components.NewMenuOption().SetLabel(label).SetValue(value)
 	}
 
-	content := fmt.Sprintf("Found %d results", length)
+	content := "_This message will be deleted in `1` minute._\n\u200b\n"
+	content += fmt.Sprintf("Found `%d` results", length)
 
-	sendErr := interaction.RespondEditWithComponents(s, i, &content,
-		components.AddMessageComponents(
+	msg, sendErr := s.InteractionResponseEdit(i.Interaction, &discordgo.WebhookEdit{
+		Content: &content,
+		Components: components.AddMessageComponents(
 			components.NewRow(
 				components.NewSelectMenu().
 					SetPlaceholder("Select a movie").
@@ -312,9 +386,9 @@ func createSelectMenu(s *discordgo.Session, i *discordgo.InteractionCreate, ytsD
 					SetOptions(menuOptions...),
 			),
 		),
-	)
+	})
 
-	return sendErr
+	return msg, sendErr
 }
 
 // createMovieEmbed create the embed for a specific movie
