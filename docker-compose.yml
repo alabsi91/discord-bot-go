@@ -8,8 +8,8 @@ services:
       - <path to download dir>:/discord-bot/downloads # should match the path in .config.json
       #- <path to .env file>:/discord-bot/.env # you can skip setting `environment` if you prepare your own .env file
     environment:
-      - UID=1000
-      - GID=1000
+      - PUID=1000
+      - PGID=1000
       - TOKEN=<YOUR_BOT_TOKEN>
       - APP_ID=<YOUR_DISCORD_APP_ID>
       - 'SERVICE_ACCOUNT_KEY=<FIREBASE_SERVICE_ACCOUNT_KEY_JSON>'
