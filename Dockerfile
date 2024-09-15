@@ -23,6 +23,8 @@ RUN apk update && apk add --no-cache ffmpeg shadow && \
     echo "**** cleanup ****" && \
     rm -rf /tmp/*
 
-COPY --from=buildimage /discord-bot/discord-bot /discord-bot/discord-bot
+WORKDIR /discord-bot
 
-ENTRYPOINT [ "/discord-bot/discord-bot" ]
+COPY --from=buildimage /discord-bot/discord-bot ./
+
+ENTRYPOINT [ "./discord-bot" ]
