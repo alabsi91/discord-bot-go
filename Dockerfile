@@ -27,4 +27,4 @@ WORKDIR /discord-bot
 
 COPY --from=buildimage /discord-bot/discord-bot ./
 
-ENTRYPOINT [ "./discord-bot" ]
+CMD ["/bin/sh", "-c", "PUID=${PUID:-911} PGID=${PGID:-911} && [[ -z ${LSIO_READ_ONLY_FS} ]] && [[ -z ${LSIO_NON_ROOT_USER} ]] && { groupmod -o -g \"$PGID\" abc; usermod -o -u \"$PUID\" abc; } && ./discord-bot"]
